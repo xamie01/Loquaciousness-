@@ -2,9 +2,9 @@
   "name": "bsc-arbitrage-bot",
   "version": "1.0.0",
   "description": "Flash loan arbitrage bot for PancakeSwap V2/V3 on BSC",
-  "main": "bscBotMainnet.js",
+  "main": "bscLiquidationBot.js",
   "scripts": {
-    "start": "node bscBotMainnet.js",
+    "start": "node bscLiquidationBot.js",
     "pm2:start": "pm2 start bscBotMainnet.js --name bsc-arb-bot",
     "pm2:stop": "pm2 stop bsc-arb-bot",
     "pm2:restart": "pm2 restart bsc-arb-bot",
