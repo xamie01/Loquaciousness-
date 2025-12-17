@@ -6,6 +6,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const path = require('path');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 class DashboardServer {
     constructor(botInstance) {
@@ -41,6 +42,17 @@ class DashboardServer {
             origin: allowedOrigins,
             credentials: true
         }));
+        
+        // Rate limiting to prevent abuse
+        const limiter = rateLimit({
+            windowMs: 15 * 60 * 1000, // 15 minutes
+            max: 100, // Limit each IP to 100 requests per windowMs
+            message: 'Too many requests from this IP, please try again later.',
+            standardHeaders: true,
+            legacyHeaders: false,
+        });
+        
+        this.app.use(limiter);
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
     }
