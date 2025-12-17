@@ -12,9 +12,16 @@ class DashboardServer {
         this.bot = botInstance;
         this.app = express();
         this.server = http.createServer(this.app);
+        
+        // Configure CORS - restrict to localhost for security
+        // In production, set ALLOWED_ORIGINS environment variable
+        const allowedOrigins = process.env.ALLOWED_ORIGINS 
+            ? process.env.ALLOWED_ORIGINS.split(',')
+            : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+        
         this.io = socketIO(this.server, {
             cors: {
-                origin: '*',
+                origin: allowedOrigins,
                 methods: ['GET', 'POST']
             }
         });

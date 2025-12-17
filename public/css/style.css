@@ -98,6 +98,7 @@ body {
 .logo h1 {
     font-size: 1.75rem;
     font-weight: 700;
+    color: var(--primary-color); /* Fallback for browsers without gradient text */
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -308,7 +309,7 @@ body {
 .stat-value {
     font-size: 1.5rem;
     font-weight: 700;
-    color: var(--text-primary);
+    color: var(--primary-color); /* Fallback for browsers without gradient text */
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -562,6 +563,21 @@ body {
 
 .toast-warning {
     border-color: var(--warning-color);
+}
+
+.toast-exit {
+    animation: toastSlideOut 0.3s ease forwards;
+}
+
+@keyframes toastSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
 }
 
 /* Loading Animation */

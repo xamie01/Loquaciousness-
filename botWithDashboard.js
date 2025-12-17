@@ -240,27 +240,34 @@ class BotWrapper {
         await this.updateCurrentBlock();
         await this.updateWalletBalance();
 
-        // For demo purposes, we'll simulate some activity
-        // In production, this would call the actual bot logic
+        // TODO: Integrate actual liquidation monitoring logic from bscLiquidationBot.js
+        // This is a simplified version for dashboard demonstration
+        // In production, replace this with actual Venus Protocol monitoring:
+        // 1. Call getActiveBorrowers() to get list of borrowers
+        // 2. For each borrower, call checkLiquidationOpportunity()
+        // 3. If profitable opportunity found, call executeLiquidation()
         
-        // Simulated monitoring
-        if (Math.random() > 0.95) {
-            // Simulate finding an opportunity (5% chance)
-            const mockOpportunity = {
-                borrower: '0x' + Math.random().toString(16).substr(2, 40),
-                expectedProfit: (Math.random() * 0.1).toFixed(4) + ' BNB',
-                shortfall: (Math.random() * 100).toFixed(2) + ' USD',
-                repayAmount: (Math.random() * 10).toFixed(4) + ' tokens',
-                timestamp: Date.now()
-            };
-            
-            this.currentOpportunities.unshift(mockOpportunity);
-            if (this.currentOpportunities.length > 5) {
-                this.currentOpportunities.pop();
+        // DEMO MODE: The following code is for demonstration only
+        // Remove or disable this section when integrating real bot logic
+        if (process.env.ENABLE_DEMO_MODE === 'true') {
+            // Simulate finding an opportunity (5% chance per cycle)
+            if (Math.random() > 0.95) {
+                const mockOpportunity = {
+                    borrower: '0x' + Math.random().toString(16).substr(2, 40),
+                    expectedProfit: (Math.random() * 0.1).toFixed(4) + ' BNB',
+                    shortfall: (Math.random() * 100).toFixed(2) + ' USD',
+                    repayAmount: (Math.random() * 10).toFixed(4) + ' tokens',
+                    timestamp: Date.now()
+                };
+                
+                this.currentOpportunities.unshift(mockOpportunity);
+                if (this.currentOpportunities.length > 5) {
+                    this.currentOpportunities.pop();
+                }
+                
+                this.dashboardServer.emitLiquidationFound(mockOpportunity);
+                console.log('💡 Demo opportunity found:', mockOpportunity.borrower);
             }
-            
-            this.dashboardServer.emitLiquidationFound(mockOpportunity);
-            console.log('💡 Opportunity found:', mockOpportunity.borrower);
         }
     }
 

@@ -320,7 +320,7 @@ class DashboardApp {
         container.appendChild(toast);
 
         setTimeout(() => {
-            toast.style.animation = 'toastSlideIn 0.3s ease reverse';
+            toast.classList.add('toast-exit');
             setTimeout(() => toast.remove(), 300);
         }, 5000);
     }
