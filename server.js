@@ -32,7 +32,15 @@ class DashboardServer {
     }
 
     setupMiddleware() {
-        this.app.use(cors());
+        // Apply same CORS restrictions to Express as Socket.io for consistency
+        const allowedOrigins = process.env.ALLOWED_ORIGINS 
+            ? process.env.ALLOWED_ORIGINS.split(',')
+            : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+        
+        this.app.use(cors({
+            origin: allowedOrigins,
+            credentials: true
+        }));
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
     }
@@ -69,12 +77,14 @@ class DashboardServer {
             // Handle bot control commands
             socket.on('startBot', () => {
                 this.bot.start();
-                this.io.emit('botStateChanged', { isRunning: true });
+                // Emit actual bot state instead of hardcoded value
+                this.io.emit('botStateChanged', { isRunning: this.bot.isRunning });
             });
 
             socket.on('stopBot', () => {
                 this.bot.stop();
-                this.io.emit('botStateChanged', { isRunning: false });
+                // Emit actual bot state instead of hardcoded value
+                this.io.emit('botStateChanged', { isRunning: this.bot.isRunning });
             });
 
             socket.on('requestStatus', () => {

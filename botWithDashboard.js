@@ -253,7 +253,7 @@ class BotWrapper {
             // Simulate finding an opportunity (5% chance per cycle)
             if (Math.random() > 0.95) {
                 const mockOpportunity = {
-                    borrower: '0x' + Math.random().toString(16).substr(2, 40),
+                    borrower: '0x' + Math.random().toString(16).substring(2, 42),
                     expectedProfit: (Math.random() * 0.1).toFixed(4) + ' BNB',
                     shortfall: (Math.random() * 100).toFixed(2) + ' USD',
                     repayAmount: (Math.random() * 10).toFixed(4) + ' tokens',

@@ -173,8 +173,9 @@ class DashboardApp {
     }
 
     updateSystemInfo(info) {
-        if (info.currentBlock) {
-            document.getElementById('currentBlock').textContent = info.currentBlock.toLocaleString();
+        if (info.currentBlock !== undefined && info.currentBlock !== '-') {
+            const blockNum = typeof info.currentBlock === 'number' ? info.currentBlock : parseInt(info.currentBlock);
+            document.getElementById('currentBlock').textContent = isNaN(blockNum) ? '-' : blockNum.toLocaleString();
         }
 
         if (info.walletAddress) {
