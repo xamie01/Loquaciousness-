@@ -15,6 +15,7 @@ LIQUIDATION_CONTRACT_ADDRESS=0x...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 MIN_OUT_BPS=100
+DASHBOARD_PORT=3000  # Optional, for web dashboard
 ```
 Optional tuning: `GAS_PRICE_MULTIPLIER`, `MAX_GAS_PRICE_GWEI`, `USE_EVENT_MONITORING`, `DATABASE_URL`.
 
@@ -36,7 +37,23 @@ npx hardhat run scripts/deploy-liquidation.js --network bsc
 ```
 Set `LIQUIDATION_CONTRACT_ADDRESS` in `.env` to the deployed address.
 
-## Run the bot (main process)
+## Run the bot
+
+### Option 1: With Web Dashboard (Recommended)
+```
+npm run dashboard
+```
+Then open http://localhost:3000 in your browser for a beautiful real-time dashboard.
+
+Features:
+- Live monitoring of liquidations and profits
+- Start/Stop bot controls from the web interface
+- Real-time WebSocket updates
+- Responsive design for mobile and desktop
+
+See [DASHBOARD.md](DASHBOARD.md) for complete dashboard documentation.
+
+### Option 2: CLI Only (Original)
 ```
 npm start
 ```
@@ -61,3 +78,5 @@ npx hardhat clean
 - Ensure the RPC has sufficient rate limits; the bot uses throttled borrower polling.
 - Keep `MIN_OUT_BPS` > 0 to protect profit against slippage.
 - For vBNB, the bot passes `address(0)` and the contract wraps/unwraps WBNB automatically.
+- The web dashboard works even without full bot configuration (demo mode for development).
+
