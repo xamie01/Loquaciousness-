@@ -40,14 +40,16 @@ class EventMonitor {
                 const vToken = new ethers.Contract(address, this.vTokenABI, this.provider);
                 
                 // Listen for Borrow events
-                const borrowListener = vToken.on("Borrow", (borrower, borrowAmount, accountBorrows, totalBorrows, event) => {
+                vToken.on("Borrow", (borrower, borrowAmount, accountBorrows, totalBorrows, event) => {
                     this.activeBorrowers.add(borrower);
                     console.log(`📊 Borrow event: ${borrower.substring(0, 10)}... borrowed from ${symbol}`);
                 });
                 
                 // Listen for RepayBorrow events
-                const repayListener = vToken.on("RepayBorrow", (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
-                    if (accountBorrows === 0n) {
+                vToken.on("RepayBorrow", (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
+                    // Safely handle accountBorrows which might be Number or BigInt
+                    const borrowsRemaining = typeof accountBorrows === 'bigint' ? accountBorrows : BigInt(accountBorrows);
+                    if (borrowsRemaining === 0n) {
                         // Fully repaid, remove from active borrowers
                         this.activeBorrowers.delete(borrower);
                     }
@@ -55,12 +57,12 @@ class EventMonitor {
                 });
                 
                 // Listen for LiquidateBorrow events
-                const liquidateListener = vToken.on("LiquidateBorrow", (liquidator, borrower, repayAmount, vTokenCollateral, seizeTokens, event) => {
+                vToken.on("LiquidateBorrow", (liquidator, borrower, repayAmount, vTokenCollateral, seizeTokens, event) => {
                     console.log(`⚡ Liquidation event: ${borrower.substring(0, 10)}... liquidated on ${symbol}`);
                     // Don't remove from set, they might still have other borrows
                 });
                 
-                this.eventListeners.push({ vToken, borrowListener, repayListener, liquidateListener });
+                this.eventListeners.push({ vToken, symbol });
                 console.log(`   ✅ Monitoring ${symbol}`);
                 
             } catch (error) {

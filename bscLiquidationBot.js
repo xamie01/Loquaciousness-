@@ -73,6 +73,7 @@ const ONE = ethers.parseEther("1");
 const DEFAULT_SWAP_SLIPPAGE = 0.01; // 1%
 const DEFAULT_GAS_LIMIT = 800000n;
 const DEFAULT_MIN_OUT_BPS = 100; // 1% buffer over repay to protect profit
+const GAS_ESTIMATE_BUFFER_PERCENT = parseInt(process.env.GAS_ESTIMATE_BUFFER_PERCENT || "20"); // Default 20% buffer
 
 // ============================================
 // CONTRACT ABIs
@@ -180,9 +181,10 @@ async function estimateGasForLiquidation(opportunity) {
             opportunity.minOutBps
         );
         
-        // Add 20% buffer to gas estimate
-        const gasWithBuffer = (gasEstimate * 120n) / 100n;
-        console.log(`   Gas Estimate: ${gasEstimate.toString()} (with 20% buffer: ${gasWithBuffer.toString()})`);
+        // Add configurable buffer to gas estimate (default 20%)
+        const bufferMultiplier = 100n + BigInt(GAS_ESTIMATE_BUFFER_PERCENT);
+        const gasWithBuffer = (gasEstimate * bufferMultiplier) / 100n;
+        console.log(`   Gas Estimate: ${gasEstimate.toString()} (with ${GAS_ESTIMATE_BUFFER_PERCENT}% buffer: ${gasWithBuffer.toString()})`);
         return gasWithBuffer;
     } catch (error) {
         console.log(`   Gas estimation failed, using default: ${error.message}`);

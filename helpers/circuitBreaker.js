@@ -56,14 +56,19 @@ class CircuitBreaker {
 
                 const lastPrice = history[history.length - 1].price;
                 
-                // Calculate price change percentage
+                // Calculate price difference (absolute value)
                 const priceDiff = currentPrice > lastPrice 
                     ? currentPrice - lastPrice 
                     : lastPrice - currentPrice;
                 
-                const percentChange = lastPrice > 0n 
-                    ? Number((priceDiff * 10000n) / lastPrice) / 100
-                    : 0;
+                // Calculate price change percentage using BigInt arithmetic
+                // Convert to basis points (10000 = 100%) to maintain precision
+                const priceDiffBps = lastPrice > 0n 
+                    ? (priceDiff * 10000n) / lastPrice
+                    : 0n;
+                
+                // Convert to percentage only at the end
+                const percentChange = Number(priceDiffBps) / 100;
 
                 // Check if price change exceeds threshold
                 if (percentChange > this.maxPriceChangePercent) {
