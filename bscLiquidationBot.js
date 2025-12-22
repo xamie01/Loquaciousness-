@@ -153,6 +153,34 @@ async function getSafeGasPrice() {
     return fee.gasPrice ? fee.gasPrice : ethers.parseUnits("3", "gwei");
 }
 
+/**
+ * Estimate gas for liquidation with 20% buffer
+ * Returns dynamic gas limit or falls back to default
+ */
+async function estimateGasForLiquidation(opportunity) {
+    try {
+        const swapFee = 2500; // 0.25% tier
+        const gasEstimate = await liquidationContract.executeLiquidation.estimateGas(
+            opportunity.borrower,
+            opportunity.debtToken,
+            opportunity.collateralToken,
+            opportunity.vDebtToken,
+            opportunity.vCollateralToken,
+            opportunity.repayAmount,
+            swapFee,
+            opportunity.minOutBps
+        );
+        
+        // Add 20% buffer to gas estimate
+        const gasWithBuffer = (gasEstimate * 120n) / 100n;
+        console.log(`   Gas Estimate: ${gasEstimate.toString()} (with 20% buffer: ${gasWithBuffer.toString()})`);
+        return gasWithBuffer;
+    } catch (error) {
+        console.log(`   Gas estimation failed, using default: ${error.message}`);
+        return DEFAULT_GAS_LIMIT;
+    }
+}
+
 // ============================================
 // CORE FUNCTIONS
 // ============================================
@@ -297,6 +325,9 @@ async function executeLiquidation(opportunity) {
         // Determine swap fee (use 0.25% tier - most liquid)
         const swapFee = 2500;
         
+        // Use dynamic gas estimation with fallback
+        const gasLimit = await estimateGasForLiquidation(opportunity);
+        
         // Execute liquidation via our contract
         const tx = await liquidationContract.executeLiquidation(
             opportunity.borrower,
@@ -308,7 +339,7 @@ async function executeLiquidation(opportunity) {
             swapFee,
             opportunity.minOutBps,
             {
-                gasLimit: DEFAULT_GAS_LIMIT,
+                gasLimit: gasLimit,
                 gasPrice: opportunity.gasPrice
             }
         );

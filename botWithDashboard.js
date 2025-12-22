@@ -229,6 +229,34 @@ class BotWrapper {
         }
     }
 
+    /**
+     * Estimate gas for liquidation with 20% buffer
+     * Returns dynamic gas limit or falls back to default
+     */
+    async estimateGasForLiquidation(opportunity) {
+        try {
+            const swapFee = 2500; // 0.25% tier
+            const gasEstimate = await this.liquidationContract.executeLiquidation.estimateGas(
+                opportunity.borrower,
+                opportunity.debtToken,
+                opportunity.collateralToken,
+                opportunity.vDebtToken,
+                opportunity.vCollateralToken,
+                opportunity.repayAmount,
+                swapFee,
+                opportunity.minOutBps
+            );
+            
+            // Add 20% buffer to gas estimate
+            const gasWithBuffer = (gasEstimate * 120n) / 100n;
+            console.log(`   Gas Estimate: ${gasEstimate.toString()} (with 20% buffer: ${gasWithBuffer.toString()})`);
+            return gasWithBuffer;
+        } catch (error) {
+            console.log(`   Gas estimation failed, using default: ${error.message}`);
+            return this.DEFAULT_GAS_LIMIT;
+        }
+    }
+
     async runMonitoringCycle() {
         if (!this.isRunning || !this.provider) {
             return;

@@ -55,6 +55,29 @@ class DashboardServer {
         this.app.use(limiter);
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
+        
+        // Simple authentication middleware for API endpoints
+        // Set DASHBOARD_API_KEY in environment for production
+        this.authMiddleware = (req, res, next) => {
+            const apiKey = process.env.DASHBOARD_API_KEY;
+            
+            // Skip auth if no API key is configured (development mode)
+            if (!apiKey) {
+                console.warn('⚠️  No DASHBOARD_API_KEY set. Authentication disabled.');
+                return next();
+            }
+            
+            const providedKey = req.headers['x-api-key'] || req.query.apiKey;
+            
+            if (providedKey !== apiKey) {
+                return res.status(401).json({ 
+                    success: false, 
+                    message: 'Unauthorized: Invalid API key' 
+                });
+            }
+            
+            next();
+        };
     }
 
     setupRoutes() {
@@ -63,17 +86,17 @@ class DashboardServer {
             res.sendFile(path.join(__dirname, 'public/index.html'));
         });
 
-        // API endpoints
+        // API endpoints with authentication
         this.app.get('/api/status', (req, res) => {
             res.json(this.getStatus());
         });
 
-        this.app.post('/api/start', (req, res) => {
+        this.app.post('/api/start', this.authMiddleware, (req, res) => {
             this.bot.start();
             res.json({ success: true, message: 'Bot started' });
         });
 
-        this.app.post('/api/stop', (req, res) => {
+        this.app.post('/api/stop', this.authMiddleware, (req, res) => {
             this.bot.stop();
             res.json({ success: true, message: 'Bot stopped' });
         });
