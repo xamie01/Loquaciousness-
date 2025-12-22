@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3FlashCallback.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
@@ -21,7 +22,7 @@ interface IWBNB {
  * @dev Uses PancakeSwap V3 flash swaps (0% fee) to source repay capital.
  *      Protects against pool ordering issues and enforces a minimum output to avoid slippage losses.
  */
-contract BSC_LiquidationV3 is IUniswapV3FlashCallback, ReentrancyGuard {
+contract BSC_LiquidationV3 is IUniswapV3FlashCallback, ReentrancyGuard, Pausable {
     address public immutable owner;
     address public immutable pancakeV3Factory;
     address public immutable pancakeV3Router;
@@ -51,6 +52,12 @@ contract BSC_LiquidationV3 is IUniswapV3FlashCallback, ReentrancyGuard {
         address indexed collateralToken,
         uint256 repayAmount,
         uint256 profit
+    );
+    
+    event EmergencyWithdraw(
+        address indexed token,
+        uint256 amount,
+        address indexed to
     );
 
     modifier onlyOwner() {
@@ -94,7 +101,7 @@ contract BSC_LiquidationV3 is IUniswapV3FlashCallback, ReentrancyGuard {
         uint256 repayAmount,
         uint24 swapFee,
         uint24 minOutBps
-    ) external onlyOwner nonReentrant {
+    ) external onlyOwner nonReentrant whenNotPaused {
         require(borrower != address(0), "Invalid borrower");
         require(repayAmount > 0, "Invalid repay amount");
         require(minOutBps <= 5000, "minOut too high");
@@ -270,6 +277,52 @@ contract BSC_LiquidationV3 is IUniswapV3FlashCallback, ReentrancyGuard {
             keccak256(abi.encode(tokenA, tokenB, fee)),
             hex"6ce8eb472fa82df5469c6ab6d485f17c3ad13c8cd7af59b3d4a8026c5ce0f7e2"
         )))));
+    }
+
+    /**
+     * @notice Pause liquidation operations in case of emergency
+     * @dev Can only be called by owner
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice Unpause liquidation operations
+     * @dev Can only be called by owner
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /**
+     * @notice Emergency withdraw function to rescue stuck funds
+     * @dev Can only be called by owner. Use address(0) for native BNB
+     * @param token Address of the token to withdraw (address(0) for BNB)
+     * @param amount Amount to withdraw (0 = withdraw all)
+     * @dev This function uses nonReentrant modifier for additional safety
+     *      even though owner is immutable and trusted
+     */
+    function emergencyWithdraw(address token, uint256 amount) external onlyOwner nonReentrant {
+        uint256 withdrawAmount;
+        
+        if (token == address(0)) {
+            // Withdraw BNB - uses nonReentrant for consistency
+            withdrawAmount = (amount == 0) ? address(this).balance : amount;
+            require(withdrawAmount > 0, "No BNB to withdraw");
+            (bool success, ) = owner.call{value: withdrawAmount}("");
+            require(success, "BNB transfer failed");
+        } else {
+            // Withdraw ERC20 token
+            IERC20 tokenContract = IERC20(token);
+            uint256 balance = tokenContract.balanceOf(address(this));
+            withdrawAmount = (amount == 0) ? balance : amount;
+            require(withdrawAmount > 0, "No tokens to withdraw");
+            require(balance >= withdrawAmount, "Insufficient balance");
+            TransferHelper.safeTransfer(token, owner, withdrawAmount);
+        }
+        
+        emit EmergencyWithdraw(token, withdrawAmount, owner);
     }
 
     receive() external payable {}

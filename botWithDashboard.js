@@ -93,6 +93,7 @@ class BotWrapper {
         this.DEFAULT_GAS_LIMIT = 800000n;
         this.DEFAULT_SWAP_SLIPPAGE = 0.01;
         this.ONE = ethers.parseEther("1");
+        this.GAS_ESTIMATE_BUFFER_PERCENT = parseInt(process.env.GAS_ESTIMATE_BUFFER_PERCENT || "20");
 
         // Initialize contracts
         const COMPTROLLER_ABI = [
@@ -226,6 +227,35 @@ class BotWrapper {
             } catch (error) {
                 console.error('Error updating block:', error.message);
             }
+        }
+    }
+
+    /**
+     * Estimate gas for liquidation with configurable buffer
+     * Returns dynamic gas limit or falls back to default
+     */
+    async estimateGasForLiquidation(opportunity) {
+        try {
+            const swapFee = 2500; // 0.25% tier
+            const gasEstimate = await this.liquidationContract.executeLiquidation.estimateGas(
+                opportunity.borrower,
+                opportunity.debtToken,
+                opportunity.collateralToken,
+                opportunity.vDebtToken,
+                opportunity.vCollateralToken,
+                opportunity.repayAmount,
+                swapFee,
+                opportunity.minOutBps
+            );
+            
+            // Add configurable buffer to gas estimate
+            const bufferMultiplier = 100n + BigInt(this.GAS_ESTIMATE_BUFFER_PERCENT);
+            const gasWithBuffer = (gasEstimate * bufferMultiplier) / 100n;
+            console.log(`   Gas Estimate: ${gasEstimate.toString()} (with ${this.GAS_ESTIMATE_BUFFER_PERCENT}% buffer: ${gasWithBuffer.toString()})`);
+            return gasWithBuffer;
+        } catch (error) {
+            console.log(`   Gas estimation failed, using default: ${error.message}`);
+            return this.DEFAULT_GAS_LIMIT;
         }
     }
 

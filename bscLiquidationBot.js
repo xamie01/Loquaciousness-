@@ -20,6 +20,10 @@ const {
     calculateLiquidationProfit
 } = require('./helpers/liquidationCalculator');
 
+// New safety and monitoring helpers
+const CircuitBreaker = require('./helpers/circuitBreaker');
+const EventMonitor = require('./helpers/eventMonitor');
+
 // ============================================
 // CONFIGURATION
 // ============================================
@@ -69,6 +73,7 @@ const ONE = ethers.parseEther("1");
 const DEFAULT_SWAP_SLIPPAGE = 0.01; // 1%
 const DEFAULT_GAS_LIMIT = 800000n;
 const DEFAULT_MIN_OUT_BPS = 100; // 1% buffer over repay to protect profit
+const GAS_ESTIMATE_BUFFER_PERCENT = parseInt(process.env.GAS_ESTIMATE_BUFFER_PERCENT || "20"); // Default 20% buffer
 
 // ============================================
 // CONTRACT ABIs
@@ -105,6 +110,10 @@ const comptroller = new ethers.Contract(VENUS_COMPTROLLER, COMPTROLLER_ABI, prov
 const oracle = new ethers.Contract(VENUS_ORACLE, ORACLE_ABI, provider);
 const liquidationContract = new ethers.Contract(LIQUIDATION_CONTRACT, LIQUIDATION_ABI, wallet);
 
+// Initialize safety and monitoring systems
+const circuitBreaker = new CircuitBreaker(oracle, VENUS_MARKETS);
+const eventMonitor = new EventMonitor(provider, VENUS_MARKETS);
+
 // ============================================
 // TELEGRAM BOT
 // ============================================
@@ -126,6 +135,7 @@ let monitoredAddresses = new Set();
 let cachedBorrowers = [];
 let lastBorrowerFetchTs = 0;
 let lastBorrowerBlock = 0;
+let useEventMonitoring = process.env.USE_EVENT_MONITORING === 'true';
 
 // ============================================
 // UTILITY HELPERS
@@ -153,18 +163,52 @@ async function getSafeGasPrice() {
     return fee.gasPrice ? fee.gasPrice : ethers.parseUnits("3", "gwei");
 }
 
+/**
+ * Estimate gas for liquidation with 20% buffer
+ * Returns dynamic gas limit or falls back to default
+ */
+async function estimateGasForLiquidation(opportunity) {
+    try {
+        const swapFee = 2500; // 0.25% tier
+        const gasEstimate = await liquidationContract.executeLiquidation.estimateGas(
+            opportunity.borrower,
+            opportunity.debtToken,
+            opportunity.collateralToken,
+            opportunity.vDebtToken,
+            opportunity.vCollateralToken,
+            opportunity.repayAmount,
+            swapFee,
+            opportunity.minOutBps
+        );
+        
+        // Add configurable buffer to gas estimate (default 20%)
+        const bufferMultiplier = 100n + BigInt(GAS_ESTIMATE_BUFFER_PERCENT);
+        const gasWithBuffer = (gasEstimate * bufferMultiplier) / 100n;
+        console.log(`   Gas Estimate: ${gasEstimate.toString()} (with ${GAS_ESTIMATE_BUFFER_PERCENT}% buffer: ${gasWithBuffer.toString()})`);
+        return gasWithBuffer;
+    } catch (error) {
+        console.log(`   Gas estimation failed, using default: ${error.message}`);
+        return DEFAULT_GAS_LIMIT;
+    }
+}
+
 // ============================================
 // CORE FUNCTIONS
 // ============================================
 
 /**
  * Get all borrowers from Venus Protocol
- * This is simplified - in production, you'd want to:
- * 1. Subscribe to Venus events (Borrow, Repay, Liquidation)
- * 2. Maintain a database of active borrowers
- * 3. Use The Graph or other indexers
+ * Now supports both event monitoring and legacy polling
  */
 async function getActiveBorrowers() {
+    // If event monitoring is enabled and has borrowers, use those
+    if (useEventMonitoring && eventMonitor.getCount() > 0) {
+        const borrowers = eventMonitor.getActiveBorrowers();
+        console.log(`   Using ${borrowers.length} borrowers from event monitor`);
+        return borrowers.slice(0, MAX_BORROWERS_PER_SCAN);
+    }
+
+    // Legacy method: query historical events
     const now = Date.now();
     if (now - lastBorrowerFetchTs < BORROWER_REFRESH_INTERVAL_MS && cachedBorrowers.length) {
         return cachedBorrowers;
@@ -297,6 +341,9 @@ async function executeLiquidation(opportunity) {
         // Determine swap fee (use 0.25% tier - most liquid)
         const swapFee = 2500;
         
+        // Use dynamic gas estimation with fallback
+        const gasLimit = await estimateGasForLiquidation(opportunity);
+        
         // Execute liquidation via our contract
         const tx = await liquidationContract.executeLiquidation(
             opportunity.borrower,
@@ -308,7 +355,7 @@ async function executeLiquidation(opportunity) {
             swapFee,
             opportunity.minOutBps,
             {
-                gasLimit: DEFAULT_GAS_LIMIT,
+                gasLimit: gasLimit,
                 gasPrice: opportunity.gasPrice
             }
         );
@@ -351,6 +398,20 @@ async function executeLiquidation(opportunity) {
  */
 async function monitorPositions() {
     console.log(`\n🔍 Scanning for liquidation opportunities...`);
+    
+    // Check circuit breaker before proceeding
+    if (!circuitBreaker.isOperational()) {
+        console.log(`⚠️  Circuit breaker tripped: ${circuitBreaker.getStatus().tripReason}`);
+        console.log(`   Skipping monitoring cycle for safety`);
+        return;
+    }
+
+    // Perform price safety check
+    const pricesOk = await circuitBreaker.checkPrices();
+    if (!pricesOk) {
+        sendMessage(`🚨 *Circuit Breaker Tripped*\n\n${circuitBreaker.getStatus().tripReason}\n\nBot operations halted for safety.`);
+        return;
+    }
     
     try {
         // Get list of borrowers to monitor
@@ -402,6 +463,7 @@ bot.onText(/\/stop/, () => {
 bot.onText(/\/status/, async () => {
     const balance = await provider.getBalance(wallet.address);
     const blockNumber = await provider.getBlockNumber();
+    const cbStatus = circuitBreaker.getStatus();
     
     sendMessage(
         `📊 *Bot Status*\n\n` +
@@ -411,8 +473,38 @@ bot.onText(/\/status/, async () => {
         `Block: ${blockNumber}\n` +
         `Liquidations: ${liquidationCount}\n` +
         `Total Profit: ${ethers.formatEther(totalProfit)} BNB\n` +
-        `Balance: ${ethers.formatEther(balance)} BNB`
+        `Balance: ${ethers.formatEther(balance)} BNB\n` +
+        `Circuit Breaker: ${cbStatus.isTripped ? '🔴 Tripped' : '🟢 OK'}\n` +
+        `Event Monitor: ${useEventMonitoring ? `🟢 Active (${eventMonitor.getCount()} borrowers)` : '⚪ Disabled'}`
     );
+});
+
+bot.onText(/\/reset/, async () => {
+    await circuitBreaker.reset();
+    sendMessage("🔄 *Circuit Breaker Reset*\n\nPrice monitoring reinitialized. Bot can resume operations.");
+});
+
+bot.onText(/\/events/, () => {
+    if (!useEventMonitoring) {
+        sendMessage("⚠️ *Event monitoring is disabled*\n\nSet USE_EVENT_MONITORING=true in .env to enable.");
+        return;
+    }
+    
+    const borrowerCount = eventMonitor.getCount();
+    const borrowers = eventMonitor.getActiveBorrowers().slice(0, 5);
+    
+    let message = `📊 *Event Monitor Status*\n\n` +
+        `Total Borrowers: ${borrowerCount}\n` +
+        `Listening: ${eventMonitor.isListening ? '🟢 Yes' : '🔴 No'}\n\n`;
+    
+    if (borrowers.length > 0) {
+        message += `Recent Borrowers:\n`;
+        borrowers.forEach((addr, i) => {
+            message += `${i + 1}. \`${addr.substring(0, 10)}...\`\n`;
+        });
+    }
+    
+    sendMessage(message);
 });
 
 // ============================================
@@ -430,12 +522,30 @@ async function main() {
     console.log(`💰 Min Profit: ${ethers.formatEther(MIN_PROFIT_THRESHOLD)} BNB`);
     console.log(`⚙️  Polling Interval: ${POLLING_INTERVAL}ms\n`);
     
+    // Initialize circuit breaker
+    await circuitBreaker.initialize();
+    
+    // Initialize event monitoring if enabled
+    if (useEventMonitoring) {
+        console.log('🎯 Event monitoring enabled');
+        await eventMonitor.startListening();
+        
+        // Get historical borrowers to seed the monitor
+        const currentBlock = await provider.getBlockNumber();
+        const fromBlock = Math.max(currentBlock - 1000, 0);
+        await eventMonitor.getHistoricalBorrowers(fromBlock, currentBlock);
+    } else {
+        console.log('📊 Using legacy event polling (set USE_EVENT_MONITORING=true for real-time monitoring)\n');
+    }
+    
     sendMessage(
         `🤖 *Liquidation Bot Started*\n\n` +
         `Protocol: Venus (BSC)\n` +
         `Flash Loans: FREE (0%)\n` +
         `Min Profit: ${ethers.formatEther(MIN_PROFIT_THRESHOLD)} BNB\n` +
-        `Status: 🟢 Active`
+        `Circuit Breaker: 🟢 Active\n` +
+        `Event Monitor: ${useEventMonitoring ? '🟢 Active' : '⚪ Disabled'}\n` +
+        `Status: 🟢 Running`
     );
     
     // Main loop
@@ -448,6 +558,18 @@ async function main() {
         await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
     }
 }
+
+// ============================================
+// CLEANUP ON EXIT
+// ============================================
+
+process.on('SIGINT', () => {
+    console.log('\n👋 Shutting down gracefully...');
+    if (useEventMonitoring) {
+        eventMonitor.stopListening();
+    }
+    process.exit(0);
+});
 
 // ============================================
 // START BOT

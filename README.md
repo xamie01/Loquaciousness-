@@ -4,6 +4,19 @@ A sophisticated DeFi liquidation bot for Venus Protocol on Binance Smart Chain, 
 
 ![Dashboard](https://github.com/user-attachments/assets/af1983fd-8484-4d2b-a4e2-6ee3674ec692)
 
+## ⭐ Recent Improvements
+
+**Version 2.0** includes significant enhancements for production use:
+
+- 🛡️ **Emergency Controls**: Pause mechanism and emergency withdrawal functions
+- ⚡ **Dynamic Gas Estimation**: Automatic gas optimization with 20% safety buffer
+- 🔒 **Dashboard Authentication**: API key protection for bot control endpoints
+- 🚨 **Circuit Breaker**: Price manipulation detection and automatic safety halt
+- 📡 **Real-time Event Monitoring**: WebSocket-based borrower discovery for faster detection
+- 📊 **Enhanced Monitoring**: Improved Telegram commands and status reporting
+
+See [IMPROVEMENTS.md](./IMPROVEMENTS.md) for detailed documentation.
+
 ## Features
 
 ### 🤖 Automated Liquidation
@@ -11,6 +24,7 @@ A sophisticated DeFi liquidation bot for Venus Protocol on Binance Smart Chain, 
 - Executes profitable liquidations automatically
 - Uses PancakeSwap V3 flash loans (0% fees!)
 - Optimizes for maximum profit with minimal gas costs
+- **NEW**: Dynamic gas estimation for optimal efficiency
 
 ### 🌐 Web Dashboard
 - **Real-time monitoring** with WebSocket updates
@@ -19,6 +33,7 @@ A sophisticated DeFi liquidation bot for Venus Protocol on Binance Smart Chain, 
 - **Live statistics** (Profit, liquidations, balance tracking)
 - **Responsive design** for desktop and mobile
 - **Toast notifications** for important events
+- **NEW**: Optional API key authentication for security
 
 ### 💰 Profit Optimization
 - Automatic profit calculation before execution
@@ -26,6 +41,13 @@ A sophisticated DeFi liquidation bot for Venus Protocol on Binance Smart Chain, 
 - Slippage protection
 - Gas price optimization
 - Close factor compliance
+- **NEW**: Dynamic gas estimation with 20% buffer
+
+### 🛡️ Safety Features
+- **Circuit Breaker**: Detects extreme price movements (>30%) and halts operations
+- **Pause Mechanism**: Emergency pause for liquidation contract
+- **Emergency Withdrawal**: Rescue stuck funds from contract
+- **Event Monitoring**: Real-time borrower tracking for faster response
 
 ## Quick Start
 
@@ -135,6 +157,18 @@ POLLING_INTERVAL = 10000ms           // How often to check for opportunities
 BORROWER_REFRESH_INTERVAL = 60000ms  // How often to refresh borrower list
 ```
 
+### New Configuration Options
+
+```bash
+# Enable real-time event monitoring (recommended)
+USE_EVENT_MONITORING=true
+
+# Dashboard API key for authentication (recommended for production)
+DASHBOARD_API_KEY=your-secret-key-here
+```
+
+See [IMPROVEMENTS.md](./IMPROVEMENTS.md) for complete configuration guide.
+
 ### Supported Markets
 
 The bot monitors these Venus markets:
@@ -151,7 +185,11 @@ When running, the bot responds to these Telegram commands:
 
 - `/start` - Start the liquidation bot
 - `/stop` - Stop the liquidation bot
-- `/status` - Get current bot status and statistics
+- `/status` - Get current bot status and statistics (includes circuit breaker and event monitor status)
+- `/reset` - Reset circuit breaker after verifying prices are safe
+- `/events` - View event monitor status and active borrower count
+
+See [IMPROVEMENTS.md](./IMPROVEMENTS.md) for detailed command descriptions.
 
 ## Development
 
