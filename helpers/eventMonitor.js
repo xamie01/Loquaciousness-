@@ -49,6 +49,8 @@ class EventMonitor {
                 vToken.on("RepayBorrow", (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
                     // Safely handle accountBorrows which might be Number or BigInt
                     try {
+                        // Use 1n as fallback (non-zero) to conservatively keep borrower in set
+                        // Better to track a borrower that might have repaid than miss an active one
                         const borrowsRemaining = typeof accountBorrows === 'bigint' 
                             ? accountBorrows 
                             : (accountBorrows !== undefined && accountBorrows !== null ? BigInt(accountBorrows) : 1n);

@@ -100,8 +100,6 @@ Replaced fixed gas limits with dynamic estimation.
 - Adds configurable safety buffer (default 20% via `GAS_ESTIMATE_BUFFER_PERCENT`)
 - Falls back to default gas limit if estimation fails
 - Reduces overpayment while maintaining reliability
-- Falls back to default gas limit if estimation fails
-- Reduces overpayment while maintaining reliability
 
 **Implementation:**
 ```javascript
