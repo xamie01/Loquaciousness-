@@ -46,11 +46,12 @@ class CircuitBreaker {
         try {
             for (const [symbol, address] of Object.entries(this.markets)) {
                 const currentPrice = await this.oracle.getUnderlyingPrice(address);
-                const history = this.priceHistory.get(address) || [];
+                const history = this.priceHistory.get(address);
                 
-                if (history.length === 0) {
-                    // First price check, just store it
+                // Initialize history if not present (defensive check)
+                if (!history || history.length === 0) {
                     this.priceHistory.set(address, [{ price: currentPrice, timestamp: Date.now() }]);
+                    console.log(`   Initializing price history for ${symbol}`);
                     continue;
                 }
 

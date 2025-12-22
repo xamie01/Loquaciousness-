@@ -300,16 +300,14 @@ contract BSC_LiquidationV3 is IUniswapV3FlashCallback, ReentrancyGuard, Pausable
      * @dev Can only be called by owner. Use address(0) for native BNB
      * @param token Address of the token to withdraw (address(0) for BNB)
      * @param amount Amount to withdraw (0 = withdraw all)
-     * @dev This function is safe from reentrancy as:
-     *      1. It's onlyOwner (immutable trusted address)
-     *      2. Contract inherits ReentrancyGuard for all operations
-     *      3. Emergency function should not be called during active liquidations
+     * @dev This function uses nonReentrant modifier for additional safety
+     *      even though owner is immutable and trusted
      */
-    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
+    function emergencyWithdraw(address token, uint256 amount) external onlyOwner nonReentrant {
         uint256 withdrawAmount;
         
         if (token == address(0)) {
-            // Withdraw BNB - safe as owner is immutable and trusted
+            // Withdraw BNB - uses nonReentrant for consistency
             withdrawAmount = (amount == 0) ? address(this).balance : amount;
             require(withdrawAmount > 0, "No BNB to withdraw");
             (bool success, ) = owner.call{value: withdrawAmount}("");

@@ -67,12 +67,14 @@ class DashboardServer {
                 return next();
             }
             
-            const providedKey = req.headers['x-api-key'] || req.query.apiKey;
+            // Accept API key only via header for security (not in query params)
+            // Query params are logged in access logs, browser history, and referrer headers
+            const providedKey = req.headers['x-api-key'];
             
             if (providedKey !== apiKey) {
                 return res.status(401).json({ 
                     success: false, 
-                    message: 'Unauthorized: Invalid API key' 
+                    message: 'Unauthorized: Invalid or missing API key. Use x-api-key header.' 
                 });
             }
             

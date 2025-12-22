@@ -48,10 +48,18 @@ class EventMonitor {
                 // Listen for RepayBorrow events
                 vToken.on("RepayBorrow", (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
                     // Safely handle accountBorrows which might be Number or BigInt
-                    const borrowsRemaining = typeof accountBorrows === 'bigint' ? accountBorrows : BigInt(accountBorrows);
-                    if (borrowsRemaining === 0n) {
-                        // Fully repaid, remove from active borrowers
-                        this.activeBorrowers.delete(borrower);
+                    try {
+                        const borrowsRemaining = typeof accountBorrows === 'bigint' 
+                            ? accountBorrows 
+                            : (accountBorrows !== undefined && accountBorrows !== null ? BigInt(accountBorrows) : 1n);
+                        
+                        if (borrowsRemaining === 0n) {
+                            // Fully repaid, remove from active borrowers
+                            this.activeBorrowers.delete(borrower);
+                        }
+                    } catch (error) {
+                        // If conversion fails, keep borrower in set to be safe
+                        console.log(`   Warning: Could not parse accountBorrows for ${borrower.substring(0, 10)}...`);
                     }
                     console.log(`💰 Repay event: ${borrower.substring(0, 10)}... repaid to ${symbol}`);
                 });

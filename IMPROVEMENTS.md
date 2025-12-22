@@ -79,12 +79,12 @@ DASHBOARD_API_KEY=your-secret-key-here
 
 **Usage:**
 ```bash
-# Using header
+# Using header (recommended for security)
 curl -X POST http://localhost:3000/api/start \
   -H "x-api-key: your-secret-key-here"
 
-# Using query parameter
-curl -X POST http://localhost:3000/api/start?apiKey=your-secret-key-here
+# Note: Query parameter authentication has been removed for security
+# API keys in URLs are logged and exposed in browser history
 ```
 
 ## ⚡ Performance Improvements
@@ -97,7 +97,9 @@ Replaced fixed gas limits with dynamic estimation.
 
 **Features:**
 - Estimates gas for each liquidation transaction
-- Adds 20% safety buffer to estimation
+- Adds configurable safety buffer (default 20% via `GAS_ESTIMATE_BUFFER_PERCENT`)
+- Falls back to default gas limit if estimation fails
+- Reduces overpayment while maintaining reliability
 - Falls back to default gas limit if estimation fails
 - Reduces overpayment while maintaining reliability
 
