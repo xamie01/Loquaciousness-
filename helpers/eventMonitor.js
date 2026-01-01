@@ -53,7 +53,9 @@ class EventMonitor {
                 
                 // Listen for RepayBorrow events
                 vToken.on("RepayBorrow", async (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
-                    // Prevent race conditions - skip if already processing this borrower
+                    // Prevent race conditions: Multiple rapid RepayBorrow events for the same borrower
+                    // could execute concurrently, leading to database inconsistencies. The lock ensures
+                    // only one event per borrower is processed at a time.
                     if (this.repayLocks.has(borrower)) {
                         return;
                     }

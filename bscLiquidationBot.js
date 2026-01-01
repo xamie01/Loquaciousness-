@@ -660,6 +660,9 @@ process.on('SIGINT', () => {
     
     // Close WebSocket provider (async but with timeout)
     if (wsProvider) {
+        // 5-second timeout ensures cleanup doesn't hang indefinitely
+        // WebSocket providers may take time to close gracefully, but we don't want
+        // to block shutdown forever if there are network issues
         const timeout = setTimeout(() => {
             console.log('⚠️  WebSocket close timeout, forcing exit');
             process.exit(0);

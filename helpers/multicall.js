@@ -96,7 +96,9 @@ class MulticallHelper {
      */
     async getBorrowBalances(borrowers, vTokens) {
         const calls = [];
-        const callMetadata = []; // Store metadata separately
+        // Store metadata separately to avoid polluting the Multicall3 call structure
+        // The calls array should only contain {target, allowFailure, callData} as per Multicall3 interface
+        const callMetadata = [];
         const vTokenInterface = new ethers.Interface([
             "function borrowBalanceStored(address account) external view returns (uint)"
         ]);
