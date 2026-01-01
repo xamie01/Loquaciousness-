@@ -61,10 +61,24 @@ class BotWrapper {
     }
 
     initializeBot() {
-        // BSC RPC and Provider
-        const BSC_RPC = process.env.BSC_RPC_QUICKNODE || "https://bsc-dataseed.binance.org/";
-        this.provider = new ethers.JsonRpcProvider(BSC_RPC);
+        // Use WebSocket provider for event monitoring, fallback to HTTP for regular calls
+        const BSC_RPC_HTTP = process.env.BSC_RPC_QUICKNODE || "https://bsc-dataseed.binance.org/";
+        const BSC_RPC_WSS = process.env.BSC_RPC_WSS || process.env.BSC_RPC_QUICKNODE?.replace('https://', 'wss://') || null;
+
+        // Primary provider for transactions and regular calls
+        this.provider = new ethers.JsonRpcProvider(BSC_RPC_HTTP);
         this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY, this.provider);
+
+        // WebSocket provider for event listening (if available)
+        this.wsProvider = null;
+        if (BSC_RPC_WSS && process.env.USE_EVENT_MONITORING === 'true') {
+            try {
+                this.wsProvider = new ethers.WebSocketProvider(BSC_RPC_WSS);
+                console.log('✅ WebSocket provider initialized for event monitoring');
+            } catch (error) {
+                console.warn('⚠️  WebSocket provider failed to initialize, using HTTP for events:', error.message);
+            }
+        }
 
         // Venus Protocol Addresses
         this.VENUS_COMPTROLLER = "0xfD36E2c2a6789Db23113685031d7F16329158384";

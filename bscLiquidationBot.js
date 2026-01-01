@@ -4,6 +4,7 @@
 require("dotenv").config();
 const ethers = require("ethers");
 const TelegramBot = require('node-telegram-bot-api');
+const pLimit = require('p-limit');
 
 // Helper utilities for Venus liquidation math
 const {
@@ -23,6 +24,7 @@ const {
 // New safety and monitoring helpers
 const CircuitBreaker = require('./helpers/circuitBreaker');
 const EventMonitor = require('./helpers/eventMonitor');
+const MulticallHelper = require('./helpers/multicall');
 
 // ============================================
 // CONFIGURATION
@@ -40,9 +42,24 @@ if (missingEnv.length) {
     throw new Error(`Missing required environment variables: ${missingEnv.join(', ')}`);
 }
 
-const BSC_RPC = process.env.BSC_RPC_QUICKNODE || "https://bsc-dataseed.binance.org/";
-const provider = new ethers.JsonRpcProvider(BSC_RPC);
+// Use WebSocket provider for event monitoring, fallback to HTTP for regular calls
+const BSC_RPC_HTTP = process.env.BSC_RPC_QUICKNODE || "https://bsc-dataseed.binance.org/";
+const BSC_RPC_WSS = process.env.BSC_RPC_WSS || process.env.BSC_RPC_QUICKNODE?.replace('https://', 'wss://') || null;
+
+// Primary provider for transactions and regular calls
+const provider = new ethers.JsonRpcProvider(BSC_RPC_HTTP);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+
+// WebSocket provider for event listening (if available)
+let wsProvider = null;
+if (BSC_RPC_WSS && process.env.USE_EVENT_MONITORING === 'true') {
+    try {
+        wsProvider = new ethers.WebSocketProvider(BSC_RPC_WSS);
+        console.log('✅ WebSocket provider initialized for event monitoring');
+    } catch (error) {
+        console.warn('⚠️  WebSocket provider failed to initialize, using HTTP for events:', error.message);
+    }
+}
 
 // Venus Protocol Addresses (BSC Mainnet)
 const VENUS_COMPTROLLER = "0xfD36E2c2a6789Db23113685031d7F16329158384";
@@ -67,7 +84,11 @@ const MAX_LIQUIDATION_SIZE = ethers.parseEther("100");  // Cap liquidation size 
 const HEALTH_FACTOR_THRESHOLD = ethers.parseEther("1.0"); // < 1.0 = liquidatable
 const POLLING_INTERVAL = 10000; // Check every 10 seconds
 const BORROWER_REFRESH_INTERVAL_MS = 60000; // Refresh borrower list every 60s
-const MAX_BORROWERS_PER_SCAN = 25; // Limit per cycle to reduce RPC load
+const BORROWER_PRUNING_INTERVAL_MS = parseInt(process.env.BORROWER_PRUNING_INTERVAL_MS || "300000"); // Prune every 5 minutes
+const MAX_BORROWERS_PER_SCAN = parseInt(process.env.MAX_BORROWERS_PER_SCAN || "25"); // Limit per cycle to reduce RPC load
+const MAX_CONCURRENT_CHECKS = parseInt(process.env.MAX_CONCURRENT_CHECKS || "5"); // Max parallel borrower checks
+const HISTORICAL_CATCH_INTERVAL_MS = parseInt(process.env.HISTORICAL_CATCH_INTERVAL_MS || "3600000"); // Large historical catch every hour
+const HISTORICAL_CATCH_BLOCKS = parseInt(process.env.HISTORICAL_CATCH_BLOCKS || "10000"); // Blocks to scan in periodic catch
 
 const ONE = ethers.parseEther("1");
 const DEFAULT_SWAP_SLIPPAGE = 0.01; // 1%
@@ -112,7 +133,9 @@ const liquidationContract = new ethers.Contract(LIQUIDATION_CONTRACT, LIQUIDATIO
 
 // Initialize safety and monitoring systems
 const circuitBreaker = new CircuitBreaker(oracle, VENUS_MARKETS);
-const eventMonitor = new EventMonitor(provider, VENUS_MARKETS);
+// Use WebSocket provider for event monitoring if available, otherwise fallback to HTTP
+const eventMonitor = new EventMonitor(wsProvider || provider, VENUS_MARKETS);
+const multicallHelper = new MulticallHelper(provider);
 
 // ============================================
 // TELEGRAM BOT
@@ -135,6 +158,8 @@ let monitoredAddresses = new Set();
 let cachedBorrowers = [];
 let lastBorrowerFetchTs = 0;
 let lastBorrowerBlock = 0;
+let lastPruningTs = 0;
+let lastHistoricalCatchTs = 0;
 let useEventMonitoring = process.env.USE_EVENT_MONITORING === 'true';
 
 // ============================================
@@ -413,31 +438,66 @@ async function monitorPositions() {
         return;
     }
     
+    // Periodic pruning of borrower list
+    if (useEventMonitoring) {
+        const now = Date.now();
+        if (now - lastPruningTs > BORROWER_PRUNING_INTERVAL_MS) {
+            try {
+                await eventMonitor.pruneBorrowers(multicallHelper);
+                lastPruningTs = now;
+            } catch (error) {
+                console.error(`❌ Pruning error: ${error.message}`);
+            }
+        }
+        
+        // Periodic large historical catch (to catch any missed events)
+        if (HISTORICAL_CATCH_INTERVAL_MS > 0 && now - lastHistoricalCatchTs > HISTORICAL_CATCH_INTERVAL_MS) {
+            try {
+                const currentBlock = await provider.getBlockNumber();
+                const fromBlock = Math.max(currentBlock - HISTORICAL_CATCH_BLOCKS, 0);
+                console.log(`📜 Running periodic historical catch (${fromBlock} to ${currentBlock})...`);
+                await eventMonitor.getHistoricalBorrowers(fromBlock, currentBlock);
+                lastHistoricalCatchTs = now;
+            } catch (error) {
+                console.error(`❌ Historical catch error: ${error.message}`);
+            }
+        }
+    }
+    
     try {
         // Get list of borrowers to monitor
         const borrowers = await getActiveBorrowers();
         
         console.log(`   Found ${borrowers.length} active borrowers`);
         
-        // Check each borrower
-        for (const borrower of borrowers) {
+        // Rate-limit concurrent checks to avoid overwhelming RPC provider
+        const limit = pLimit(MAX_CONCURRENT_CHECKS);
+        
+        // Check borrowers in parallel with concurrency limit
+        const checkPromises = borrowers.map(borrower => 
+            limit(async () => {
+                if (!isRunning) return null;
+                return checkLiquidationOpportunity(borrower);
+            })
+        );
+        
+        const opportunities = (await Promise.all(checkPromises)).filter(opp => opp !== null);
+        
+        // Execute liquidations sequentially (safer for transactions)
+        for (const opportunity of opportunities) {
             if (!isRunning) break;
             
-            const opportunity = await checkLiquidationOpportunity(borrower);
+            console.log(`\n💡 LIQUIDATION OPPORTUNITY FOUND!`);
+            console.log(`   Borrower: ${opportunity.borrower}`);
+            console.log(`   Shortfall: ${ethers.formatEther(opportunity.shortfall)} USD`);
+            console.log(`   Expected Profit: ${ethers.formatEther(opportunity.expectedProfit)} BNB`);
             
-            if (opportunity) {
-                console.log(`\n💡 LIQUIDATION OPPORTUNITY FOUND!`);
-                console.log(`   Borrower: ${opportunity.borrower}`);
-                console.log(`   Shortfall: ${ethers.formatEther(opportunity.shortfall)} USD`);
-                console.log(`   Expected Profit: ${ethers.formatEther(opportunity.expectedProfit)} BNB`);
-                
-                // Execute liquidation
-                const success = await executeLiquidation(opportunity);
-                
-                if (success) {
-                    // Wait a bit after successful liquidation
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                }
+            // Execute liquidation
+            const success = await executeLiquidation(opportunity);
+            
+            if (success) {
+                // Wait a bit after successful liquidation
+                await new Promise(resolve => setTimeout(resolve, 5000));
             }
         }
         
@@ -532,7 +592,9 @@ async function main() {
         
         // Get historical borrowers to seed the monitor
         const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(currentBlock - 1000, 0);
+        const historicalBlocks = parseInt(process.env.HISTORICAL_BLOCKS_STARTUP || "5000");
+        const fromBlock = Math.max(currentBlock - historicalBlocks, 0);
+        console.log(`📜 Seeding from last ${historicalBlocks} blocks (${fromBlock} to ${currentBlock})...`);
         await eventMonitor.getHistoricalBorrowers(fromBlock, currentBlock);
     } else {
         console.log('📊 Using legacy event polling (set USE_EVENT_MONITORING=true for real-time monitoring)\n');
@@ -563,10 +625,15 @@ async function main() {
 // CLEANUP ON EXIT
 // ============================================
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('\n👋 Shutting down gracefully...');
     if (useEventMonitoring) {
         eventMonitor.stopListening();
+    }
+    // Close WebSocket provider if it exists
+    if (wsProvider) {
+        await wsProvider.destroy();
+        console.log('✅ WebSocket connection closed');
     }
     process.exit(0);
 });

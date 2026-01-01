@@ -46,24 +46,23 @@ class EventMonitor {
                 });
                 
                 // Listen for RepayBorrow events
-                vToken.on("RepayBorrow", (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
-                    // Safely handle accountBorrows which might be Number or BigInt
+                vToken.on("RepayBorrow", async (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
+                    // Call borrowBalanceStored to verify if borrower has zero balance
+                    // This is safer than relying on the event's accountBorrows parameter
                     try {
-                        // Use 1n as fallback (non-zero) to conservatively keep borrower in set
-                        // Better to track a borrower that might have repaid than miss an active one
-                        const borrowsRemaining = typeof accountBorrows === 'bigint' 
-                            ? accountBorrows 
-                            : (accountBorrows !== undefined && accountBorrows !== null ? BigInt(accountBorrows) : 1n);
+                        const currentBalance = await vToken.borrowBalanceStored(borrower);
                         
-                        if (borrowsRemaining === 0n) {
+                        if (currentBalance === 0n) {
                             // Fully repaid, remove from active borrowers
                             this.activeBorrowers.delete(borrower);
+                            console.log(`💰 Repay event: ${borrower.substring(0, 10)}... fully repaid ${symbol} (removed from tracking)`);
+                        } else {
+                            console.log(`💰 Repay event: ${borrower.substring(0, 10)}... partially repaid ${symbol} (balance: ${currentBalance.toString()})`);
                         }
                     } catch (error) {
-                        // If conversion fails, keep borrower in set to be safe
-                        console.log(`   Warning: Could not parse accountBorrows for ${borrower.substring(0, 10)}...`);
+                        // If verification fails, keep borrower in set to be safe
+                        console.log(`   Warning: Could not verify balance for ${borrower.substring(0, 10)}... - ${error.message}`);
                     }
-                    console.log(`💰 Repay event: ${borrower.substring(0, 10)}... repaid to ${symbol}`);
                 });
                 
                 // Listen for LiquidateBorrow events
@@ -163,6 +162,39 @@ class EventMonitor {
      */
     clear() {
         this.activeBorrowers.clear();
+    }
+
+    /**
+     * Prune borrowers with zero balances across all markets
+     * Uses Multicall to efficiently check all borrowers in batches
+     * @param {MulticallHelper} multicallHelper - Multicall helper instance
+     * @returns {Object} { checked: number, pruned: number }
+     */
+    async pruneBorrowers(multicallHelper) {
+        const borrowers = Array.from(this.activeBorrowers);
+        if (borrowers.length === 0) {
+            return { checked: 0, pruned: 0 };
+        }
+
+        console.log(`🧹 Pruning borrower list (checking ${borrowers.length} addresses)...`);
+        
+        const vTokenAddresses = Object.values(this.markets);
+        
+        // Use Multicall to get active borrowers (those with non-zero balances)
+        const activeBorrowers = await multicallHelper.getActiveBorrowers(borrowers, vTokenAddresses);
+        
+        // Remove borrowers that no longer have any balances
+        let prunedCount = 0;
+        for (const borrower of borrowers) {
+            if (!activeBorrowers.has(borrower)) {
+                this.activeBorrowers.delete(borrower);
+                prunedCount++;
+            }
+        }
+        
+        console.log(`   ✅ Pruned ${prunedCount} borrowers with zero balances (${this.activeBorrowers.size} remain)`);
+        
+        return { checked: borrowers.length, pruned: prunedCount };
     }
 
     /**
