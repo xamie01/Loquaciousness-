@@ -13,7 +13,8 @@ class BorrowerDatabase {
         // Default to SQLite file in project root
         this.dbPath = dbPath || process.env.DATABASE_URL || path.join(__dirname, '..', 'borrowers.db');
         this.db = null;
-        this.isEnabled = process.env.DATABASE_URL !== undefined || dbPath !== null;
+        // Check if DATABASE_URL is truthy (not empty string) or dbPath is provided
+        this.isEnabled = (process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== '') || dbPath !== null;
     }
 
     /**

@@ -96,6 +96,7 @@ class MulticallHelper {
      */
     async getBorrowBalances(borrowers, vTokens) {
         const calls = [];
+        const callMetadata = []; // Store metadata separately
         const vTokenInterface = new ethers.Interface([
             "function borrowBalanceStored(address account) external view returns (uint)"
         ]);
@@ -106,7 +107,10 @@ class MulticallHelper {
                 calls.push({
                     target: vToken.address,
                     allowFailure: true,
-                    callData: vTokenInterface.encodeFunctionData("borrowBalanceStored", [borrower]),
+                    callData: vTokenInterface.encodeFunctionData("borrowBalanceStored", [borrower])
+                });
+                // Store metadata separately to avoid polluting call structure
+                callMetadata.push({
                     borrower: borrower,
                     vToken: vToken.address,
                     symbol: vToken.symbol
@@ -118,12 +122,12 @@ class MulticallHelper {
         
         // Parse results into a structured map
         const balances = {};
-        for (let i = 0; i < calls.length; i++) {
-            const call = calls[i];
+        for (let i = 0; i < callMetadata.length; i++) {
+            const meta = callMetadata[i];
             const result = results[i];
             
-            if (!balances[call.borrower]) {
-                balances[call.borrower] = {};
+            if (!balances[meta.borrower]) {
+                balances[meta.borrower] = {};
             }
             
             if (result.success) {
@@ -132,22 +136,22 @@ class MulticallHelper {
                         "borrowBalanceStored",
                         result.returnData
                     );
-                    balances[call.borrower][call.vToken] = {
+                    balances[meta.borrower][meta.vToken] = {
                         balance: decoded[0],
-                        symbol: call.symbol
+                        symbol: meta.symbol
                     };
                 } catch (error) {
                     // Failed to decode, set to 0
-                    balances[call.borrower][call.vToken] = {
+                    balances[meta.borrower][meta.vToken] = {
                         balance: 0n,
-                        symbol: call.symbol
+                        symbol: meta.symbol
                     };
                 }
             } else {
                 // Call failed, set to 0
-                balances[call.borrower][call.vToken] = {
+                balances[meta.borrower][meta.vToken] = {
                     balance: 0n,
-                    symbol: call.symbol
+                    symbol: meta.symbol
                 };
             }
         }
@@ -167,20 +171,22 @@ class MulticallHelper {
             "function getUnderlyingPrice(address vToken) external view returns (uint)"
         ]);
 
+        // Cache oracle address to avoid repeated calls
+        const oracleAddress = await oracle.getAddress();
+
         for (const vTokenAddress of vTokenAddresses) {
             calls.push({
-                target: await oracle.getAddress(),
+                target: oracleAddress,
                 allowFailure: true,
-                callData: oracleInterface.encodeFunctionData("getUnderlyingPrice", [vTokenAddress]),
-                vToken: vTokenAddress
+                callData: oracleInterface.encodeFunctionData("getUnderlyingPrice", [vTokenAddress])
             });
         }
 
         const results = await this.batchCall(calls);
         
         const prices = {};
-        for (let i = 0; i < calls.length; i++) {
-            const call = calls[i];
+        for (let i = 0; i < vTokenAddresses.length; i++) {
+            const vTokenAddress = vTokenAddresses[i];
             const result = results[i];
             
             if (result.success) {
@@ -189,12 +195,12 @@ class MulticallHelper {
                         "getUnderlyingPrice",
                         result.returnData
                     );
-                    prices[call.vToken] = decoded[0];
+                    prices[vTokenAddress] = decoded[0];
                 } catch (error) {
-                    prices[call.vToken] = 0n;
+                    prices[vTokenAddress] = 0n;
                 }
             } else {
-                prices[call.vToken] = 0n;
+                prices[vTokenAddress] = 0n;
             }
         }
 

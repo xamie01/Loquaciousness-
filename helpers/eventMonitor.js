@@ -15,6 +15,7 @@ class EventMonitor {
         this.activeBorrowers = new Set();
         this.eventListeners = [];
         this.isListening = false;
+        this.repayLocks = new Map(); // Prevent race conditions in repay handler
         
         // Venus vToken ABI with events
         this.vTokenABI = [
@@ -52,9 +53,16 @@ class EventMonitor {
                 
                 // Listen for RepayBorrow events
                 vToken.on("RepayBorrow", async (payer, borrower, repayAmount, accountBorrows, totalBorrows, event) => {
-                    // Call borrowBalanceStored to verify if borrower has zero balance
-                    // This is safer than relying on the event's accountBorrows parameter
+                    // Prevent race conditions - skip if already processing this borrower
+                    if (this.repayLocks.has(borrower)) {
+                        return;
+                    }
+                    
+                    this.repayLocks.set(borrower, true);
+                    
                     try {
+                        // Call borrowBalanceStored to verify if borrower has zero balance
+                        // This is safer than relying on the event's accountBorrows parameter
                         const currentBalance = await vToken.borrowBalanceStored(borrower);
                         
                         if (currentBalance === 0n) {
@@ -71,6 +79,11 @@ class EventMonitor {
                     } catch (error) {
                         // If verification fails, keep borrower in set to be safe
                         console.log(`   Warning: Could not verify balance for ${borrower.substring(0, 10)}... - ${error.message}`);
+                    } finally {
+                        // Release lock after a short delay to prevent rapid concurrent events
+                        setTimeout(() => {
+                            this.repayLocks.delete(borrower);
+                        }, 1000);
                     }
                 });
                 

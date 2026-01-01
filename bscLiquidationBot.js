@@ -647,19 +647,36 @@ async function main() {
 // CLEANUP ON EXIT
 // ============================================
 
-process.on('SIGINT', async () => {
+process.on('SIGINT', () => {
     console.log('\n👋 Shutting down gracefully...');
+    
+    // Synchronous cleanup
     if (useEventMonitoring) {
         eventMonitor.stopListening();
     }
-    // Close database connection
+    
+    // Close database connection (synchronous)
     borrowerDB.close();
-    // Close WebSocket provider if it exists
+    
+    // Close WebSocket provider (async but with timeout)
     if (wsProvider) {
-        await wsProvider.destroy();
-        console.log('✅ WebSocket connection closed');
+        const timeout = setTimeout(() => {
+            console.log('⚠️  WebSocket close timeout, forcing exit');
+            process.exit(0);
+        }, 5000);
+        
+        wsProvider.destroy().then(() => {
+            clearTimeout(timeout);
+            console.log('✅ WebSocket connection closed');
+            process.exit(0);
+        }).catch(() => {
+            clearTimeout(timeout);
+            console.log('⚠️  WebSocket close error, exiting anyway');
+            process.exit(0);
+        });
+    } else {
+        process.exit(0);
     }
-    process.exit(0);
 });
 
 // ============================================
