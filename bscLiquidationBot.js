@@ -90,6 +90,7 @@ const MAX_BORROWERS_PER_SCAN = parseInt(process.env.MAX_BORROWERS_PER_SCAN || "2
 const MAX_CONCURRENT_CHECKS = parseInt(process.env.MAX_CONCURRENT_CHECKS || "5"); // Max parallel borrower checks
 const HISTORICAL_CATCH_INTERVAL_MS = parseInt(process.env.HISTORICAL_CATCH_INTERVAL_MS || "3600000"); // Large historical catch every hour
 const HISTORICAL_CATCH_BLOCKS = parseInt(process.env.HISTORICAL_CATCH_BLOCKS || "10000"); // Blocks to scan in periodic catch
+const WEBSOCKET_CLOSE_TIMEOUT_MS = 5000; // Timeout for WebSocket graceful shutdown
 
 const ONE = ethers.parseEther("1");
 const DEFAULT_SWAP_SLIPPAGE = 0.01; // 1%
@@ -660,13 +661,13 @@ process.on('SIGINT', () => {
     
     // Close WebSocket provider (async but with timeout)
     if (wsProvider) {
-        // 5-second timeout ensures cleanup doesn't hang indefinitely
+        // Timeout ensures cleanup doesn't hang indefinitely
         // WebSocket providers may take time to close gracefully, but we don't want
         // to block shutdown forever if there are network issues
         const timeout = setTimeout(() => {
             console.log('⚠️  WebSocket close timeout, forcing exit');
             process.exit(0);
-        }, 5000);
+        }, WEBSOCKET_CLOSE_TIMEOUT_MS);
         
         wsProvider.destroy().then(() => {
             clearTimeout(timeout);

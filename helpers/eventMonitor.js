@@ -7,6 +7,9 @@
 
 const { ethers } = require("ethers");
 
+// Time to hold lock after RepayBorrow event to prevent rapid concurrent processing
+const REPAY_LOCK_TIMEOUT_MS = 1000;
+
 class EventMonitor {
     constructor(provider, markets, database = null) {
         this.provider = provider;
@@ -85,7 +88,7 @@ class EventMonitor {
                         // Release lock after a short delay to prevent rapid concurrent events
                         setTimeout(() => {
                             this.repayLocks.delete(borrower);
-                        }, 1000);
+                        }, REPAY_LOCK_TIMEOUT_MS);
                     }
                 });
                 

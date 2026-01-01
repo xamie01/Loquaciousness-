@@ -8,6 +8,8 @@
 const { ethers } = require("ethers");
 
 // Multicall3 is deployed at the same address on BSC and many EVM chains
+// This is a well-known, deterministic deployment using Nick's method
+// See: https://www.multicall3.com/
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 const MULTICALL3_ABI = [

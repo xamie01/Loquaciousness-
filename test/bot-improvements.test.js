@@ -12,6 +12,9 @@ const BorrowerDatabase = require("../helpers/borrowerDatabase");
 const path = require("path");
 const fs = require("fs");
 
+// Multicall3 deployment address (same across many chains)
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
 describe("Bot Improvements", function () {
     let provider;
     
@@ -27,7 +30,7 @@ describe("Bot Improvements", function () {
         });
 
         it("Should initialize with correct Multicall3 address", function () {
-            expect(multicall.multicall.target).to.equal("0xcA11bde05977b3631167028862bE2a173976CA11");
+            expect(multicall.multicall.target).to.equal(MULTICALL3_ADDRESS);
         });
 
         it("Should have batchCall method", function () {
