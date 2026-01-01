@@ -275,14 +275,28 @@ class BorrowerDatabase {
 
     /**
      * Get total profit from liquidations
+     * Note: Returns string representation to maintain precision
+     * Convert to BigInt for calculations: BigInt(getTotalProfit())
      */
     getTotalProfit() {
         if (!this.isEnabled || !this.db) return '0';
         
         try {
-            const stmt = this.db.prepare('SELECT SUM(CAST(profit_bnb AS REAL)) as total FROM liquidations');
-            const row = stmt.get();
-            return row.total || '0';
+            // Use TEXT aggregation to maintain precision
+            // Sum as strings then convert to maintain full precision
+            const stmt = this.db.prepare('SELECT profit_bnb FROM liquidations');
+            const rows = stmt.all();
+            
+            let total = 0n;
+            for (const row of rows) {
+                try {
+                    total += BigInt(row.profit_bnb);
+                } catch (e) {
+                    // Skip invalid entries
+                }
+            }
+            
+            return total.toString();
         } catch (error) {
             return '0';
         }
