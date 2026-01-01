@@ -6,6 +6,18 @@ A sophisticated DeFi liquidation bot for Venus Protocol on Binance Smart Chain, 
 
 ## ⭐ Recent Improvements
 
+**Version 3.0** includes major performance and scalability enhancements:
+
+- 🌐 **WebSocket Event Monitoring**: Push-based event detection reduces RPC calls by 80%
+- ⚡ **Multicall Batching**: Single RPC call for multiple checks, O(1) instead of O(N)
+- 🧹 **Automatic Pruning**: Periodic cleanup of zero-balance borrowers prevents bloat
+- 💾 **Database Persistence**: SQLite storage for warm-starts and multi-instance coordination
+- 🚀 **Concurrency Control**: Rate-limited parallel checks with p-limit
+- 📜 **Enhanced Historical Seeding**: Configurable startup and periodic historical catches
+- 🔒 **Improved Repay Handler**: Verified balance checks before borrower removal
+
+See [IMPLEMENTATION.md](./IMPLEMENTATION.md) for detailed documentation of new features.
+
 **Version 2.0** includes significant enhancements for production use:
 
 - 🛡️ **Emergency Controls**: Pause mechanism and emergency withdrawal functions
@@ -80,10 +92,17 @@ Required environment variables:
 ```env
 PRIVATE_KEY=your_wallet_private_key
 BSC_RPC_QUICKNODE=your_bsc_rpc_endpoint
+BSC_RPC_WSS=wss://your_websocket_endpoint  # NEW: For WebSocket event monitoring
 LIQUIDATION_CONTRACT_ADDRESS=your_deployed_contract
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_chat_id
 DASHBOARD_PORT=3000  # Optional, defaults to 3000
+
+# NEW: Performance and database options
+USE_EVENT_MONITORING=true  # Enable WebSocket event monitoring (recommended)
+DATABASE_URL=./borrowers.db  # Enable database persistence (recommended)
+MAX_CONCURRENT_CHECKS=5  # Rate limiting for parallel checks
+BORROWER_PRUNING_INTERVAL_MS=300000  # Prune zero-balance borrowers every 5 min
 ```
 
 4. **Deploy liquidation contract** (if not already deployed)
