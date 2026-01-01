@@ -30,6 +30,7 @@
     "@openzeppelin/contracts": "^5.4.0",
     "@uniswap/v3-core": "^1.0.1",
     "@uniswap/v3-periphery": "^1.4.4",
+    "better-sqlite3": "^12.5.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "ethers": "^6.15.0",

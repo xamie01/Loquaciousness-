@@ -6,3 +6,8 @@ cache
 artifacts
 .env
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+

@@ -25,6 +25,7 @@ const {
 const CircuitBreaker = require('./helpers/circuitBreaker');
 const EventMonitor = require('./helpers/eventMonitor');
 const MulticallHelper = require('./helpers/multicall');
+const BorrowerDatabase = require('./helpers/borrowerDatabase');
 
 // ============================================
 // CONFIGURATION
@@ -133,8 +134,9 @@ const liquidationContract = new ethers.Contract(LIQUIDATION_CONTRACT, LIQUIDATIO
 
 // Initialize safety and monitoring systems
 const circuitBreaker = new CircuitBreaker(oracle, VENUS_MARKETS);
+const borrowerDB = new BorrowerDatabase();
 // Use WebSocket provider for event monitoring if available, otherwise fallback to HTTP
-const eventMonitor = new EventMonitor(wsProvider || provider, VENUS_MARKETS);
+const eventMonitor = new EventMonitor(wsProvider || provider, VENUS_MARKETS, borrowerDB);
 const multicallHelper = new MulticallHelper(provider);
 
 // ============================================
@@ -392,6 +394,19 @@ async function executeLiquidation(opportunity) {
             liquidationCount++;
             totalProfit += opportunity.expectedProfit;
             
+            // Record liquidation in database
+            if (borrowerDB.isEnabled) {
+                borrowerDB.recordLiquidation(
+                    receipt.hash,
+                    opportunity.borrower,
+                    opportunity.debtToken,
+                    opportunity.collateralToken,
+                    opportunity.repayAmount,
+                    opportunity.expectedProfit,
+                    receipt.gasUsed
+                );
+            }
+            
             console.log(`\n✅ LIQUIDATION SUCCESSFUL!`);
             console.log(`   Gas Used: ${receipt.gasUsed.toString()}`);
             console.log(`   Total Liquidations: ${liquidationCount}`);
@@ -582,12 +597,19 @@ async function main() {
     console.log(`💰 Min Profit: ${ethers.formatEther(MIN_PROFIT_THRESHOLD)} BNB`);
     console.log(`⚙️  Polling Interval: ${POLLING_INTERVAL}ms\n`);
     
+    // Initialize database
+    borrowerDB.initialize();
+    
     // Initialize circuit breaker
     await circuitBreaker.initialize();
     
     // Initialize event monitoring if enabled
     if (useEventMonitoring) {
         console.log('🎯 Event monitoring enabled');
+        
+        // Load borrowers from database for warm start
+        eventMonitor.loadFromDatabase();
+        
         await eventMonitor.startListening();
         
         // Get historical borrowers to seed the monitor
@@ -630,6 +652,8 @@ process.on('SIGINT', async () => {
     if (useEventMonitoring) {
         eventMonitor.stopListening();
     }
+    // Close database connection
+    borrowerDB.close();
     // Close WebSocket provider if it exists
     if (wsProvider) {
         await wsProvider.destroy();

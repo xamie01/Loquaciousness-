@@ -8,9 +8,10 @@
 const { ethers } = require("ethers");
 
 class EventMonitor {
-    constructor(provider, markets) {
+    constructor(provider, markets, database = null) {
         this.provider = provider;
         this.markets = markets;
+        this.database = database;
         this.activeBorrowers = new Set();
         this.eventListeners = [];
         this.isListening = false;
@@ -42,6 +43,10 @@ class EventMonitor {
                 // Listen for Borrow events
                 vToken.on("Borrow", (borrower, borrowAmount, accountBorrows, totalBorrows, event) => {
                     this.activeBorrowers.add(borrower);
+                    // Persist to database if available
+                    if (this.database) {
+                        this.database.addBorrower(borrower);
+                    }
                     console.log(`📊 Borrow event: ${borrower.substring(0, 10)}... borrowed from ${symbol}`);
                 });
                 
@@ -55,6 +60,10 @@ class EventMonitor {
                         if (currentBalance === 0n) {
                             // Fully repaid, remove from active borrowers
                             this.activeBorrowers.delete(borrower);
+                            // Update database
+                            if (this.database) {
+                                this.database.markBorrowerZeroBalance(borrower);
+                            }
                             console.log(`💰 Repay event: ${borrower.substring(0, 10)}... fully repaid ${symbol} (removed from tracking)`);
                         } else {
                             console.log(`💰 Repay event: ${borrower.substring(0, 10)}... partially repaid ${symbol} (balance: ${currentBalance.toString()})`);
@@ -125,6 +134,12 @@ class EventMonitor {
                 
                 if (events.length > 0) {
                     console.log(`   ${symbol}: Found ${events.length} borrow events`);
+                    
+                    // Batch add to database
+                    if (this.database && events.length > 0) {
+                        const addresses = events.map(e => e.args.borrower);
+                        this.database.addBorrowersBatch(addresses);
+                    }
                 }
                 
             } catch (error) {
@@ -165,6 +180,21 @@ class EventMonitor {
     }
 
     /**
+     * Load borrowers from database (warm start)
+     */
+    loadFromDatabase() {
+        if (!this.database) return 0;
+        
+        const borrowers = this.database.getActiveBorrowers();
+        for (const address of borrowers) {
+            this.activeBorrowers.add(address);
+        }
+        
+        console.log(`📥 Loaded ${borrowers.length} borrowers from database`);
+        return borrowers.length;
+    }
+
+    /**
      * Prune borrowers with zero balances across all markets
      * Uses Multicall to efficiently check all borrowers in batches
      * @param {MulticallHelper} multicallHelper - Multicall helper instance
@@ -188,6 +218,10 @@ class EventMonitor {
         for (const borrower of borrowers) {
             if (!activeBorrowers.has(borrower)) {
                 this.activeBorrowers.delete(borrower);
+                // Update database
+                if (this.database) {
+                    this.database.markBorrowerZeroBalance(borrower);
+                }
                 prunedCount++;
             }
         }
